@@ -1,4 +1,4 @@
-# PB Trading Journal
+# Trading journal
 
 Webový trading journal postavený na Reactu (Vite + TypeScript). Data se ukládají lokálně v prohlížeči (`localStorage`) — zálohuj pomocí **JSON exportu** v aplikaci.
 
