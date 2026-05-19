@@ -1,0 +1,7 @@
+---
+description: Po každém commitu v tomto repozitáři vždy ihned push na origin (aktuální větev).
+globs: 
+alwaysApply: true
+---
+
+Po `git commit` v tomto projektu **vždy** hned spusť `git push` na `origin` a na aktuální větev (`main` nebo jinou), pokud uživatel výslovně neřekne jinak.
