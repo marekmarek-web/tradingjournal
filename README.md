@@ -25,7 +25,7 @@ Statické soubory jsou ve složce `dist/` (vhodné pro hosting typu Vercel, Netl
 
 ## Funkce (zjednodušeně)
 
-Ruční zápis obchodů, import CSV (MT5/FundedNext), screenshoty k obchodům, dashboard (PnL, R, win rate, …), filtry, export/import JSON a export CSV.
+Ruční zápis obchodů, import CSV (MT5/FundedNext), screenshoty k obchodům, dashboard (PnL, R, win rate, …), přehled **zaplaceno za prop účty vs. výběry**, filtry, export/import JSON a export CSV.
 
 ## SQL migrace
 

@@ -91,6 +91,10 @@ type Settings = {
   maxLossesPerDay: number;
   defaultRiskPct: number;
   currency: string;
+  /** Celkem zaplaceno za prop účty (challenge / activation fees …). */
+  propPaidTotal: number;
+  /** Celkem vybráno z prop účtů (skutečné payouty ke sobě). */
+  propWithdrawnTotal: number;
 };
 
 type Filters = {
@@ -141,6 +145,8 @@ const defaultSettings: Settings = {
   maxLossesPerDay: 2,
   defaultRiskPct: 0.25,
   currency: "USD",
+  propPaidTotal: 0,
+  propWithdrawnTotal: 0,
 };
 
 const emptyFilters: Filters = {
@@ -925,6 +931,22 @@ function App() {
               <StatCard label="Profit Factor" value={stats.pf === Infinity ? "∞" : fmt(stats.pf, 2)} sub={`Max DD ${fmtMoney(stats.maxDd, settings.currency)} / ${fmt(stats.maxDdPct, 2)} %`} tone={stats.pf >= 1.3 ? "good" : stats.pf >= 1 ? "warn" : "bad"} />
             </div>
 
+            <Section title="Prop účty (cash flow)">
+              <p className="mb-4 text-sm text-slate-600">
+                Souhrnné částky za prop firmy — vyplňuješ je v <strong>Nastavení</strong>. Trading PnL z tabulky obchodů je odděleně; výběry z účtu často nejsou jednotlivý trade v MT5.
+              </p>
+              <div className="grid gap-4 md:grid-cols-3">
+                <StatCard label="Zaplaceno za prop (celkem)" value={`${fmt(settings.propPaidTotal, 2)} ${settings.currency}`} sub="challenge / aktivace / rebuy…" tone="bad" />
+                <StatCard label="Vybráno z prop (celkem)" value={`${fmt(settings.propWithdrawnTotal, 2)} ${settings.currency}`} sub="payouty ke sobě" tone={settings.propWithdrawnTotal > 0 ? "good" : "neutral"} />
+                <StatCard
+                  label="Čistě prop (výběry − zaplaceno)"
+                  value={fmtMoney(settings.propWithdrawnTotal - settings.propPaidTotal, settings.currency)}
+                  sub="bez PnL z journalu obchodů"
+                  tone={settings.propWithdrawnTotal - settings.propPaidTotal >= 0 ? "good" : "bad"}
+                />
+              </div>
+            </Section>
+
             <Section title="Equity křivka">
               <MiniLineChart data={stats.curve} />
             </Section>
@@ -1386,6 +1408,28 @@ function SettingsPanel({ settings, setSettings, onClear }: { settings: Settings;
         <NumericField label="Max obchodů denně" valueNum={settings.maxTradesPerDay} onCommit={(v) => update("maxTradesPerDay", Math.max(0, Math.round(v)))} emptyZero={false} />
         <NumericField label="Max ztrát denně" valueNum={settings.maxLossesPerDay} onCommit={(v) => update("maxLossesPerDay", Math.max(0, Math.round(v)))} emptyZero={false} />
       </div>
+
+      <div className="mt-8 rounded-3xl border border-indigo-200 bg-indigo-50/90 p-5">
+        <h3 className="text-lg font-black text-indigo-950">Prop účty — peníze</h3>
+        <p className="mt-1 text-sm text-indigo-900">
+          Celkově zaplaceno prop firmám (challenge / rebuy / activation…) a celkově vybráno jako payout ke sobě. Slouží jen jako přehled; jednotlivé obchody zůstávají v journalu.
+        </p>
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <NumericField
+            label={`Zaplaceno za prop účty celkem (${settings.currency})`}
+            valueNum={settings.propPaidTotal}
+            onCommit={(v) => update("propPaidTotal", Math.max(0, v))}
+            emptyZero={false}
+          />
+          <NumericField
+            label={`Vybráno z prop účtů celkem (${settings.currency})`}
+            valueNum={settings.propWithdrawnTotal}
+            onCommit={(v) => update("propWithdrawnTotal", Math.max(0, v))}
+            emptyZero={false}
+          />
+        </div>
+      </div>
+
       <div className="mt-6 rounded-3xl border border-rose-200 bg-rose-50 p-5">
         <h3 className="font-black text-rose-800">Danger zone</h3>
         <p className="mt-1 text-sm text-rose-700">Smazání obchodů nejde vrátit. Nejdřív si udělej JSON export.</p>
