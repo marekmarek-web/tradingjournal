@@ -958,32 +958,58 @@ function App() {
   const propPaidTotal = sumPropPaid(settings.propAccounts);
   const propWithdrawnTotal = sumPropWithdrawn(settings.propAccounts);
   const propNet = propWithdrawnTotal - propPaidTotal;
+  const isTrainingTab = tab === "training";
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/90 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 md:flex-row md:items-center md:justify-between">
-          <div>
+    <div className={isTrainingTab ? "flex h-dvh flex-col overflow-hidden bg-slate-900" : "min-h-screen bg-slate-50 text-slate-900"}>
+      <header className={`z-20 shrink-0 border-b backdrop-blur ${isTrainingTab ? "border-slate-800 bg-slate-900/95 text-white" : "sticky top-0 border-slate-200 bg-white/90"}`}>
+        <div className={`mx-auto flex flex-col gap-3 px-4 py-3 ${isTrainingTab ? "max-w-none" : "max-w-7xl gap-4 py-4 md:flex-row md:items-center md:justify-between"}`}>
+          <div className="flex items-center justify-between gap-3 md:justify-start">
             <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-600 text-lg font-black text-white">TJ</div>
+              <div className={`flex h-11 w-11 items-center justify-center rounded-2xl text-lg font-black text-white ${isTrainingTab ? "bg-indigo-600" : "bg-blue-600"}`}>TJ</div>
               <div>
                 <h1 className="text-xl font-black tracking-tight">Trading journal</h1>
-                <p className="text-sm text-slate-500">US30 / NAS100 / XAU / FX — journal, risk a výkonnost.</p>
+                {!isTrainingTab ? (
+                  <p className="text-sm text-slate-500">US30 / NAS100 / XAU / FX — journal, risk a výkonnost.</p>
+                ) : (
+                  <p className="text-sm text-slate-400">Trénink ICT/SMC · AI Trading Wiki</p>
+                )}
               </div>
             </div>
+            {isTrainingTab ? (
+              <a
+                href="/training/index.html"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-xl border border-slate-600 px-3 py-2 text-sm font-bold text-slate-200 hover:bg-slate-800 md:hidden"
+              >
+                Celá obrazovka ↗
+              </a>
+            ) : null}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge className={riskLocked ? "bg-rose-100 text-rose-700" : "bg-emerald-100 text-emerald-700"}>
-              {riskLocked ? `LOCK: ${riskReason}` : "Risk OK"}
-            </Badge>
-            <Badge className="bg-slate-100 text-slate-700">Dnes: {fmtMoney(allStats.todayPnl, settings.currency)}</Badge>
-            <button onClick={exportJson} className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold hover:bg-slate-100">Export JSON</button>
-            <button onClick={exportCsv} className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold hover:bg-slate-100">Export CSV</button>
-          </div>
+          {!isTrainingTab ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge className={riskLocked ? "bg-rose-100 text-rose-700" : "bg-emerald-100 text-emerald-700"}>
+                {riskLocked ? `LOCK: ${riskReason}` : "Risk OK"}
+              </Badge>
+              <Badge className="bg-slate-100 text-slate-700">Dnes: {fmtMoney(allStats.todayPnl, settings.currency)}</Badge>
+              <button onClick={exportJson} className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold hover:bg-slate-100">Export JSON</button>
+              <button onClick={exportCsv} className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold hover:bg-slate-100">Export CSV</button>
+            </div>
+          ) : (
+            <a
+              href="/training/index.html"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hidden rounded-xl border border-slate-600 px-4 py-2 text-sm font-bold text-slate-200 hover:bg-slate-800 md:inline-flex"
+            >
+              Otevřít na celou obrazovku ↗
+            </a>
+          )}
         </div>
 
-        <nav className="mx-auto flex max-w-7xl gap-2 overflow-x-auto px-4 pb-3">
+        <nav className={`mx-auto flex gap-2 overflow-x-auto px-4 pb-3 ${isTrainingTab ? "max-w-none" : "max-w-7xl"}`}>
           {(
             [
               ["dashboard", "Dashboard"],
@@ -998,7 +1024,7 @@ function App() {
             <button
               key={id}
               onClick={() => setTab(id)}
-              className={`rounded-xl px-4 py-2 text-sm font-bold transition ${tab === id ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+              className={`rounded-xl px-4 py-2 text-sm font-bold transition ${tab === id ? (isTrainingTab && id === "training" ? "bg-indigo-500 text-white" : "bg-blue-600 text-white") : isTrainingTab ? "bg-slate-800 text-slate-300 hover:bg-slate-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
             >
               {label}
             </button>
@@ -1006,8 +1032,15 @@ function App() {
         </nav>
       </header>
 
+      {isTrainingTab ? (
+        <iframe
+          src="/training/index.html?embed=1"
+          title="AI Trading Wiki Live"
+          className="min-h-0 w-full flex-1 border-0 bg-[#131722]"
+        />
+      ) : (
       <main className="mx-auto max-w-7xl px-4 py-6">
-        {tab !== "add" && tab !== "settings" && tab !== "prop" && tab !== "training" && (
+        {tab !== "add" && tab !== "settings" && tab !== "prop" && (
           <FiltersPanel filters={filters} setFilters={setFilters} instruments={instruments} />
         )}
 
@@ -1145,25 +1178,13 @@ function App() {
           />
         )}
 
-        {tab === "training" && (
-          <Section title="AI Trading Wiki — trénink ICT/SMC">
-            <p className="mb-4 text-sm text-slate-600">
-              Replay chart, 50 scénářů, quiz, statistiky, coach a wiki. Data zůstávají v prohlížeči (localStorage), odděleně od journalu obchodů.
-            </p>
-            <iframe
-              src="/training/index.html"
-              title="AI Trading Wiki Live"
-              className="h-[min(78vh,900px)] w-full rounded-3xl border border-slate-200 bg-slate-900"
-            />
-          </Section>
-        )}
-
         {tab === "settings" && (
           <SettingsPanel settings={settings} setSettings={setSettings} onClear={() => {
             if (confirm("Smazat všechny obchody? Tohle nejde vrátit.")) setTrades([]);
           }} />
         )}
       </main>
+      )}
     </div>
   );
 }
