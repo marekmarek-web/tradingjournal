@@ -1,0 +1,6 @@
+{
+  "rewrites": [
+    { "source": "/training/(.*)", "destination": "/training/$1" },
+    { "source": "/((?!training/).*)", "destination": "/index.html" }
+  ]
+}

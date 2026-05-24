@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "build:wiki": "node scripts/build-wiki.mjs",
+    "prebuild": "npm run build:wiki",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview"

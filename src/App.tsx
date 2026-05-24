@@ -49,6 +49,33 @@ type MistakeTag =
 
 type NewsMode = "Normal" | "High impact" | "CPI/NFP/FOMC" | "Earnings risk" | "Unknown";
 
+type PropFirm =
+  | "FTMO"
+  | "FundedNext"
+  | "The5ers"
+  | "MyFundedFX"
+  | "Apex"
+  | "E8 Markets"
+  | "Fidelcrest"
+  | "TopStep"
+  | "Bright Funded"
+  | "Instant Funding"
+  | "Other";
+
+type PropPhase = "Challenge" | "Verification" | "Funded" | "Instant" | "Demo" | "Other";
+
+type PropAccount = {
+  id: string;
+  firm: PropFirm;
+  firmCustom?: string;
+  accountSize: number;
+  phase: PropPhase;
+  paid: number;
+  withdrawn: number;
+  notes?: string;
+  createdAt: string;
+};
+
 type Trade = {
   id: string;
   date: string; // YYYY-MM-DD
@@ -82,6 +109,7 @@ type Trade = {
   screenshot?: string; // base64 data URL
   createdAt: string;
   source?: "manual" | "csv" | "import";
+  propAccountId?: string;
 };
 
 type Settings = {
@@ -91,10 +119,11 @@ type Settings = {
   maxLossesPerDay: number;
   defaultRiskPct: number;
   currency: string;
-  /** Celkem zaplaceno za prop účty (challenge / activation fees …). */
-  propPaidTotal: number;
-  /** Celkem vybráno z prop účtů (skutečné payouty ke sobě). */
-  propWithdrawnTotal: number;
+  /** @deprecated — použij propAccounts; zachováno pro migraci / export */
+  propPaidTotal?: number;
+  /** @deprecated — použij propAccounts */
+  propWithdrawnTotal?: number;
+  propAccounts: PropAccount[];
 };
 
 type Filters = {
@@ -138,6 +167,61 @@ const mistakeOptions: MistakeTag[] = [
 ];
 const newsOptions: NewsMode[] = ["Normal", "High impact", "CPI/NFP/FOMC", "Earnings risk", "Unknown"];
 
+const propFirmOptions: PropFirm[] = [
+  "FTMO",
+  "FundedNext",
+  "The5ers",
+  "MyFundedFX",
+  "Apex",
+  "E8 Markets",
+  "Fidelcrest",
+  "TopStep",
+  "Bright Funded",
+  "Instant Funding",
+  "Other",
+];
+
+const propPhaseOptions: PropPhase[] = ["Challenge", "Verification", "Funded", "Instant", "Demo", "Other"];
+
+type AppTab = "dashboard" | "journal" | "add" | "import" | "prop" | "training" | "settings";
+
+function propFirmLabel(a: PropAccount): string {
+  return a.firm === "Other" && a.firmCustom?.trim() ? a.firmCustom.trim() : a.firm;
+}
+
+function sumPropPaid(accounts: PropAccount[]): number {
+  return accounts.reduce((s, a) => s + (a.paid || 0), 0);
+}
+
+function sumPropWithdrawn(accounts: PropAccount[]): number {
+  return accounts.reduce((s, a) => s + (a.withdrawn || 0), 0);
+}
+
+function normalizeSettings(raw: Partial<Settings>): Settings {
+  const merged = { ...defaultSettings, ...raw };
+  let accounts = Array.isArray(merged.propAccounts) ? merged.propAccounts : [];
+  if (accounts.length === 0) {
+    const legacyPaid = n(merged.propPaidTotal, 0);
+    const legacyWithdrawn = n(merged.propWithdrawnTotal, 0);
+    if (legacyPaid > 0 || legacyWithdrawn > 0) {
+      accounts = [
+        {
+          id: uid(),
+          firm: "Other",
+          firmCustom: "Celkem (migrace)",
+          accountSize: merged.accountSize,
+          phase: "Other",
+          paid: legacyPaid,
+          withdrawn: legacyWithdrawn,
+          notes: "Automatická migrace ze starého nastavení",
+          createdAt: new Date().toISOString(),
+        },
+      ];
+    }
+  }
+  return { ...merged, propAccounts: accounts };
+}
+
 const defaultSettings: Settings = {
   accountSize: 10000,
   maxDailyLossPct: 1,
@@ -145,8 +229,7 @@ const defaultSettings: Settings = {
   maxLossesPerDay: 2,
   defaultRiskPct: 0.25,
   currency: "USD",
-  propPaidTotal: 0,
-  propWithdrawnTotal: 0,
+  propAccounts: [],
 };
 
 const emptyFilters: Filters = {
@@ -726,7 +809,7 @@ function NumericField({
 function App() {
   const [settings, setSettings] = useState<Settings>(() => {
     try {
-      return { ...defaultSettings, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}") };
+      return normalizeSettings(JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}"));
     } catch {
       return defaultSettings;
     }
@@ -741,7 +824,7 @@ function App() {
   });
 
   const [filters, setFilters] = useState<Filters>(emptyFilters);
-  const [tab, setTab] = useState<"dashboard" | "journal" | "add" | "import" | "settings">("dashboard");
+  const [tab, setTab] = useState<AppTab>("dashboard");
   const [editing, setEditing] = useState<Trade | null>(null);
   const [selectedTrade, setSelectedTrade] = useState<Trade | null>(null);
 
@@ -848,7 +931,7 @@ function App() {
       try {
         const data = JSON.parse(String(reader.result));
         if (Array.isArray(data.trades)) setTrades(data.trades);
-        if (data.settings) setSettings({ ...defaultSettings, ...data.settings });
+        if (data.settings) setSettings(normalizeSettings(data.settings));
         alert("Import JSON dokončen.");
       } catch {
         alert("JSON se nepodařilo načíst.");
@@ -871,6 +954,10 @@ function App() {
   const byInstrument = useMemo(() => groupBy(filteredTrades, (t) => t.instrument), [filteredTrades]);
   const bySetup = useMemo(() => groupBy(filteredTrades, (t) => t.setup), [filteredTrades]);
   const byMistake = useMemo(() => groupBy(filteredTrades, (t) => t.mistake), [filteredTrades]);
+
+  const propPaidTotal = sumPropPaid(settings.propAccounts);
+  const propWithdrawnTotal = sumPropWithdrawn(settings.propAccounts);
+  const propNet = propWithdrawnTotal - propPaidTotal;
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
@@ -897,18 +984,20 @@ function App() {
         </div>
 
         <nav className="mx-auto flex max-w-7xl gap-2 overflow-x-auto px-4 pb-3">
-          {[
-            ["dashboard", "Dashboard"],
-            ["journal", "Obchody"],
-            ["add", editing ? "Upravit trade" : "Přidat trade"],
-            ["import", "Import"],
-            ["settings", "Nastavení"],
-          ].map(([id, label]) => (
+          {(
+            [
+              ["dashboard", "Dashboard"],
+              ["journal", "Obchody"],
+              ["add", editing ? "Upravit trade" : "Přidat trade"],
+              ["prop", "Prop účty"],
+              ["training", "Trénink"],
+              ["import", "Import"],
+              ["settings", "Nastavení"],
+            ] as const
+          ).map(([id, label]) => (
             <button
               key={id}
-              onClick={() =>
-                setTab(id as "dashboard" | "journal" | "add" | "import" | "settings")
-              }
+              onClick={() => setTab(id)}
               className={`rounded-xl px-4 py-2 text-sm font-bold transition ${tab === id ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
             >
               {label}
@@ -918,7 +1007,7 @@ function App() {
       </header>
 
       <main className="mx-auto max-w-7xl px-4 py-6">
-        {tab !== "add" && tab !== "settings" && (
+        {tab !== "add" && tab !== "settings" && tab !== "prop" && tab !== "training" && (
           <FiltersPanel filters={filters} setFilters={setFilters} instruments={instruments} />
         )}
 
@@ -933,18 +1022,50 @@ function App() {
 
             <Section title="Prop účty (cash flow)">
               <p className="mb-4 text-sm text-slate-600">
-                Souhrnné částky za prop firmy — vyplňuješ je v <strong>Nastavení</strong>. Trading PnL z tabulky obchodů je odděleně; výběry z účtu často nejsou jednotlivý trade v MT5.
+                Přehled po prop firmách — detailní záznamy spravuješ v záložce <strong>Prop účty</strong>. Trading PnL z obchodů je odděleně.
               </p>
               <div className="grid gap-4 md:grid-cols-3">
-                <StatCard label="Zaplaceno za prop (celkem)" value={`${fmt(settings.propPaidTotal, 2)} ${settings.currency}`} sub="challenge / aktivace / rebuy…" tone="bad" />
-                <StatCard label="Vybráno z prop (celkem)" value={`${fmt(settings.propWithdrawnTotal, 2)} ${settings.currency}`} sub="payouty ke sobě" tone={settings.propWithdrawnTotal > 0 ? "good" : "neutral"} />
+                <StatCard label="Zaplaceno za prop (celkem)" value={`${fmt(propPaidTotal, 2)} ${settings.currency}`} sub="challenge / aktivace / rebuy…" tone="bad" />
+                <StatCard label="Vybráno z prop (celkem)" value={`${fmt(propWithdrawnTotal, 2)} ${settings.currency}`} sub="payouty ke sobě" tone={propWithdrawnTotal > 0 ? "good" : "neutral"} />
                 <StatCard
                   label="Čistě prop (výběry − zaplaceno)"
-                  value={fmtMoney(settings.propWithdrawnTotal - settings.propPaidTotal, settings.currency)}
+                  value={fmtMoney(propNet, settings.currency)}
                   sub="bez PnL z journalu obchodů"
-                  tone={settings.propWithdrawnTotal - settings.propPaidTotal >= 0 ? "good" : "bad"}
+                  tone={propNet >= 0 ? "good" : "bad"}
                 />
               </div>
+              {settings.propAccounts.length > 0 ? (
+                <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200">
+                  <table className="min-w-full text-left text-sm">
+                    <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+                      <tr>
+                        <th className="px-3 py-2">Firma</th>
+                        <th className="px-3 py-2">Účet</th>
+                        <th className="px-3 py-2">Fáze</th>
+                        <th className="px-3 py-2">Zaplaceno</th>
+                        <th className="px-3 py-2">Vybráno</th>
+                        <th className="px-3 py-2">Net</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {settings.propAccounts.map((a) => (
+                        <tr key={a.id} className="border-t border-slate-100">
+                          <td className="px-3 py-2 font-semibold">{propFirmLabel(a)}</td>
+                          <td className="px-3 py-2">{fmt(a.accountSize, 0)} {settings.currency}</td>
+                          <td className="px-3 py-2">{a.phase}</td>
+                          <td className="px-3 py-2 text-rose-700">{fmt(a.paid, 2)}</td>
+                          <td className="px-3 py-2 text-emerald-700">{fmt(a.withdrawn, 2)}</td>
+                          <td className={`px-3 py-2 font-bold ${a.withdrawn - a.paid >= 0 ? "text-emerald-700" : "text-rose-700"}`}>
+                            {fmtMoney(a.withdrawn - a.paid, settings.currency)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="mt-3 text-sm text-slate-500">Zatím žádné prop účty — přidej je v záložce Prop účty.</p>
+              )}
             </Section>
 
             <Section title="Equity křivka">
@@ -1015,6 +1136,26 @@ function App() {
               </ul>
             </Section>
           </div>
+        )}
+
+        {tab === "prop" && (
+          <PropAccountsPanel
+            settings={settings}
+            setSettings={setSettings}
+          />
+        )}
+
+        {tab === "training" && (
+          <Section title="AI Trading Wiki — trénink ICT/SMC">
+            <p className="mb-4 text-sm text-slate-600">
+              Replay chart, 50 scénářů, quiz, statistiky, coach a wiki. Data zůstávají v prohlížeči (localStorage), odděleně od journalu obchodů.
+            </p>
+            <iframe
+              src="/training/index.html"
+              title="AI Trading Wiki Live"
+              className="h-[min(78vh,900px)] w-full rounded-3xl border border-slate-200 bg-slate-900"
+            />
+          </Section>
         )}
 
         {tab === "settings" && (
@@ -1305,6 +1446,20 @@ function TradeForm({ trade, settings, onSave, onCancel }: { trade: Trade | null;
           <Field label="Setup"><select className={inputClass} value={form.setup} onChange={(e) => update("setup", e.target.value as SetupType)}>{setupOptions.map((s) => <option key={s}>{s}</option>)}</select></Field>
           <Field label="Grade"><select className={inputClass} value={form.grade} onChange={(e) => update("grade", e.target.value as Grade)}>{gradeOptions.map((g) => <option key={g}>{g}</option>)}</select></Field>
           <Field label="Session"><select className={inputClass} value={form.session} onChange={(e) => update("session", e.target.value as SessionName)}>{sessionOptions.map((s) => <option key={s}>{s}</option>)}</select></Field>
+          <Field label="Prop účet">
+            <select
+              className={inputClass}
+              value={form.propAccountId ?? ""}
+              onChange={(e) => update("propAccountId", e.target.value || undefined)}
+            >
+              <option value="">— žádný —</option>
+              {settings.propAccounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {propFirmLabel(a)} · {a.phase} · {fmt(a.accountSize, 0)}
+                </option>
+              ))}
+            </select>
+          </Field>
           <NumericField label="P TP před SL %" valueNum={form.probability} onCommit={(v) => update("probability", clamp(v, 0, 100))} clampRange={[0, 100]} />
           <NumericField label="Stop-risk %" valueNum={form.stopRisk} onCommit={(v) => update("stopRisk", clamp(v, 0, 100))} clampRange={[0, 100]} />
           <NumericField label="EV R" valueNum={form.evR} onCommit={(v) => update("evR", v)} />
@@ -1394,6 +1549,206 @@ function FileDrop({ accept, onFile, label, hint }: { accept: string; onFile: (fi
   );
 }
 
+function PropAccountsPanel({
+  settings,
+  setSettings,
+}: {
+  settings: Settings;
+  setSettings: React.Dispatch<React.SetStateAction<Settings>>;
+}) {
+  const [draft, setDraft] = useState<Omit<PropAccount, "id" | "createdAt">>(() => ({
+    firm: "FundedNext",
+    accountSize: settings.accountSize,
+    phase: "Challenge",
+    paid: 0,
+    withdrawn: 0,
+    notes: "",
+  }));
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  function resetDraft() {
+    setDraft({
+      firm: "FundedNext",
+      accountSize: settings.accountSize,
+      phase: "Challenge",
+      paid: 0,
+      withdrawn: 0,
+      notes: "",
+    });
+    setEditingId(null);
+  }
+
+  function saveDraft() {
+    if (draft.firm === "Other" && !draft.firmCustom?.trim()) {
+      alert("U firmy „Other“ vyplň vlastní název.");
+      return;
+    }
+    const entry: PropAccount = {
+      id: editingId ?? uid(),
+      createdAt: editingId
+        ? settings.propAccounts.find((a) => a.id === editingId)?.createdAt ?? new Date().toISOString()
+        : new Date().toISOString(),
+      ...draft,
+      paid: Math.max(0, draft.paid),
+      withdrawn: Math.max(0, draft.withdrawn),
+    };
+    setSettings((s) => ({
+      ...s,
+      propAccounts: editingId
+        ? s.propAccounts.map((a) => (a.id === editingId ? entry : a))
+        : [...s.propAccounts, entry],
+    }));
+    resetDraft();
+  }
+
+  function editAccount(a: PropAccount) {
+    setEditingId(a.id);
+    setDraft({
+      firm: a.firm,
+      firmCustom: a.firmCustom,
+      accountSize: a.accountSize,
+      phase: a.phase,
+      paid: a.paid,
+      withdrawn: a.withdrawn,
+      notes: a.notes ?? "",
+    });
+  }
+
+  function deleteAccount(id: string) {
+    if (!confirm("Smazat tento prop účet?")) return;
+    setSettings((s) => ({ ...s, propAccounts: s.propAccounts.filter((a) => a.id !== id) }));
+    if (editingId === id) resetDraft();
+  }
+
+  const totalPaid = sumPropPaid(settings.propAccounts);
+  const totalWithdrawn = sumPropWithdrawn(settings.propAccounts);
+
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-4 md:grid-cols-3">
+        <StatCard label="Zaplaceno celkem" value={`${fmt(totalPaid, 2)} ${settings.currency}`} tone="bad" />
+        <StatCard label="Vybráno celkem" value={`${fmt(totalWithdrawn, 2)} ${settings.currency}`} tone={totalWithdrawn > 0 ? "good" : "neutral"} />
+        <StatCard label="Net prop" value={fmtMoney(totalWithdrawn - totalPaid, settings.currency)} tone={totalWithdrawn - totalPaid >= 0 ? "good" : "bad"} />
+      </div>
+
+      <Section title={`Prop účty (${settings.propAccounts.length})`}>
+        {settings.propAccounts.length === 0 ? (
+          <p className="text-sm text-slate-500">Zatím žádné záznamy — přidej první prop firmu níže.</p>
+        ) : (
+          <div className="overflow-x-auto rounded-2xl border border-slate-200">
+            <table className="min-w-full text-left text-sm">
+              <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+                <tr>
+                  <th className="px-3 py-2">Firma</th>
+                  <th className="px-3 py-2">Velikost</th>
+                  <th className="px-3 py-2">Fáze</th>
+                  <th className="px-3 py-2">Zaplaceno</th>
+                  <th className="px-3 py-2">Vybráno</th>
+                  <th className="px-3 py-2">Net</th>
+                  <th className="px-3 py-2">Poznámka</th>
+                  <th className="px-3 py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {settings.propAccounts.map((a) => (
+                  <tr key={a.id} className="border-t border-slate-100 hover:bg-slate-50">
+                    <td className="px-3 py-2 font-bold">{propFirmLabel(a)}</td>
+                    <td className="px-3 py-2">{fmt(a.accountSize, 0)}</td>
+                    <td className="px-3 py-2">{a.phase}</td>
+                    <td className="px-3 py-2 text-rose-700">{fmt(a.paid, 2)}</td>
+                    <td className="px-3 py-2 text-emerald-700">{fmt(a.withdrawn, 2)}</td>
+                    <td className={`px-3 py-2 font-bold ${a.withdrawn - a.paid >= 0 ? "text-emerald-700" : "text-rose-700"}`}>
+                      {fmtMoney(a.withdrawn - a.paid, settings.currency)}
+                    </td>
+                    <td className="max-w-[160px] truncate px-3 py-2 text-slate-500" title={a.notes}>{a.notes || "—"}</td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      <button type="button" onClick={() => editAccount(a)} className="mr-2 text-xs font-bold text-blue-600 hover:underline">Upravit</button>
+                      <button type="button" onClick={() => deleteAccount(a.id)} className="text-xs font-bold text-rose-600 hover:underline">Smazat</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Section>
+
+      <Section title={editingId ? "Upravit prop účet" : "Přidat prop účet"}>
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <Field label="Prop firma">
+            <select
+              className={inputClass}
+              value={draft.firm}
+              onChange={(e) => setDraft((d) => ({ ...d, firm: e.target.value as PropFirm }))}
+            >
+              {propFirmOptions.map((f) => (
+                <option key={f} value={f}>{f}</option>
+              ))}
+            </select>
+          </Field>
+          {draft.firm === "Other" ? (
+            <Field label="Vlastní název firmy">
+              <input
+                className={inputClass}
+                value={draft.firmCustom ?? ""}
+                onChange={(e) => setDraft((d) => ({ ...d, firmCustom: e.target.value }))}
+                placeholder="např. MFF, Blue Guardian…"
+              />
+            </Field>
+          ) : null}
+          <Field label="Fáze účtu">
+            <select
+              className={inputClass}
+              value={draft.phase}
+              onChange={(e) => setDraft((d) => ({ ...d, phase: e.target.value as PropPhase }))}
+            >
+              {propPhaseOptions.map((p) => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+          </Field>
+          <NumericField
+            label={`Velikost účtu (${settings.currency})`}
+            valueNum={draft.accountSize}
+            onCommit={(v) => setDraft((d) => ({ ...d, accountSize: Math.max(0, v) }))}
+            emptyZero={false}
+          />
+          <NumericField
+            label={`Zaplaceno (${settings.currency})`}
+            valueNum={draft.paid}
+            onCommit={(v) => setDraft((d) => ({ ...d, paid: Math.max(0, v) }))}
+            emptyZero={false}
+          />
+          <NumericField
+            label={`Vybráno / payout (${settings.currency})`}
+            valueNum={draft.withdrawn}
+            onCommit={(v) => setDraft((d) => ({ ...d, withdrawn: Math.max(0, v) }))}
+            emptyZero={false}
+          />
+          <Field label="Poznámka">
+            <input
+              className={inputClass}
+              value={draft.notes ?? ""}
+              onChange={(e) => setDraft((d) => ({ ...d, notes: e.target.value }))}
+              placeholder="challenge #2, rebuy, instant…"
+            />
+          </Field>
+        </div>
+        <div className="mt-4 flex gap-3">
+          <button type="button" onClick={saveDraft} className="rounded-2xl bg-indigo-600 px-5 py-3 font-black text-white hover:bg-indigo-700">
+            {editingId ? "Uložit změny" : "Přidat prop účet"}
+          </button>
+          {editingId ? (
+            <button type="button" onClick={resetDraft} className="rounded-2xl border border-slate-300 px-5 py-3 font-bold hover:bg-slate-100">
+              Zrušit úpravu
+            </button>
+          ) : null}
+        </div>
+      </Section>
+    </div>
+  );
+}
+
 function SettingsPanel({ settings, setSettings, onClear }: { settings: Settings; setSettings: React.Dispatch<React.SetStateAction<Settings>>; onClear: () => void }) {
   function update<K extends keyof Settings>(key: K, value: Settings[K]) {
     setSettings((s) => ({ ...s, [key]: value }));
@@ -1412,21 +1767,21 @@ function SettingsPanel({ settings, setSettings, onClear }: { settings: Settings;
       <div className="mt-8 rounded-3xl border border-indigo-200 bg-indigo-50/90 p-5">
         <h3 className="text-lg font-black text-indigo-950">Prop účty — peníze</h3>
         <p className="mt-1 text-sm text-indigo-900">
-          Celkově zaplaceno prop firmám (challenge / rebuy / activation…) a celkově vybráno jako payout ke sobě. Slouží jen jako přehled; jednotlivé obchody zůstávají v journalu.
+          Prop firmy spravuješ v záložce <strong>Prop účty</strong> — můžeš mít více záznamů (FTMO, FundedNext, The5ers…).
         </p>
-        <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <NumericField
-            label={`Zaplaceno za prop účty celkem (${settings.currency})`}
-            valueNum={settings.propPaidTotal}
-            onCommit={(v) => update("propPaidTotal", Math.max(0, v))}
-            emptyZero={false}
-          />
-          <NumericField
-            label={`Vybráno z prop účtů celkem (${settings.currency})`}
-            valueNum={settings.propWithdrawnTotal}
-            onCommit={(v) => update("propWithdrawnTotal", Math.max(0, v))}
-            emptyZero={false}
-          />
+        <div className="mt-4 grid gap-4 md:grid-cols-3 text-sm">
+          <div className="rounded-2xl bg-white/80 p-3">
+            <div className="text-slate-500">Zaplaceno celkem</div>
+            <div className="text-lg font-black text-rose-700">{fmt(sumPropPaid(settings.propAccounts), 2)} {settings.currency}</div>
+          </div>
+          <div className="rounded-2xl bg-white/80 p-3">
+            <div className="text-slate-500">Vybráno celkem</div>
+            <div className="text-lg font-black text-emerald-700">{fmt(sumPropWithdrawn(settings.propAccounts), 2)} {settings.currency}</div>
+          </div>
+          <div className="rounded-2xl bg-white/80 p-3">
+            <div className="text-slate-500">Počet prop účtů</div>
+            <div className="text-lg font-black text-indigo-950">{settings.propAccounts.length}</div>
+          </div>
         </div>
       </div>
 
